@@ -148,7 +148,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._between_set_screen)    # _PAGE_BETWEEN_SETS
         self._stack.addWidget(self._end_screen)            # _PAGE_END
 
-    def _build_tutorial_trials(self) -> list[dict]:
+    def _build_tutorial_trials(self):
         """Load the first TUTORIAL_NUM_IMAGES images + captions from train2017 (translated to Spanish)."""
         translator = Translator(source="en", target="es")
         loader = AnnotationLoader(TUTORIAL_ANN_PATH, translator=translator)

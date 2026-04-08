@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spontaneous Speech Experiment — Flow Diagram</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f0f1a;
+      color: #e0e0ff;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      padding: 32px;
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.6rem;
+      margin-bottom: 8px;
+      color: #7eb8ff;
+      letter-spacing: 0.05em;
+    }
+    .subtitle {
+      text-align: center;
+      color: #8888aa;
+      font-size: 0.85rem;
+      margin-bottom: 36px;
+    }
+    .section-title {
+      color: #4a9eff;
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 40px 0 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      border-bottom: 1px solid #333366;
+      padding-bottom: 6px;
+    }
+    .diagram-box {
+      background: #12122a;
+      border: 1px solid #2a2a55;
+      border-radius: 12px;
+      padding: 24px;
+      overflow-x: auto;
+    }
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Spontaneous Speech Experiment</h1>
+  <p class="subtitle">Architecture &amp; Runtime Flow Diagram</p>
+
+  <!-- ───────────────────────────── 1. Architecture ───────────────────────────── -->
+  <div class="section-title">1. Component Architecture</div>
+  <div class="diagram-box">
+    <div class="mermaid">
+graph TD
+    Entry["<b>spontaneous_speech.py</b>\nEntry Point\nQApplication"] --> MW
+
+    MW["<b>MainWindow</b>\nOrchestrator / State Machine\nQMainWindow"] --> SW
+
+    SW["QStackedWidget\n5 screens"] --> IS
+    SW --> TS
+    SW --> TRS
+    SW --> BS
+    SW --> ES
+
+    IS["InstructionScreen\nWelcome / Instructions"]
+    TS["TutorialScreen\nPractice Session\n(image → captions → done)"]
+    TRS["TrialScreen\nMain Experiment Display\n(image / fixation cross)"]
+    BS["BetweenSetScreen\nBreak / Pause"]
+    ES["EndScreen\nCompletion"]
+
+    MW --> TM["QTimer\nFixation Timer\n2000 ms"]
+    MW --> KF["_AppKeyFilter\nGlobal Key Interceptor\nSpace / PageDown / Escape"]
+
+    MW --> IM["<b>ImageManager</b>\nImage Loading &amp; Set Assignment\nCOCO 2017 images"]
+    MW --> LSL["<b>LSLManager</b>\nEEG Marker Streaming\nLab Streaming Layer"]
+    MW --> AL["<b>AnnotationLoader</b>\nCOCO JSON Caption Loader"]
+    AL --> TR["<b>Translator</b>\nGoogle Translate (EN→ES)\nPersistent JSON Cache"]
+
+    IM --> FS1["File System\n/coco2017/selection/"]
+    AL --> FS2["File System\n/coco2017/train2017/ann/"]
+    LSL --> EEG["EEG Hardware / LSL Outlet\n(offline mode: console print)"]
+
+    classDef core    fill:#1e3a5f,stroke:#4a9eff,color:#d0e8ff
+    classDef screen  fill:#1a3320,stroke:#4acd7a,color:#d0ffd8
+    classDef manager fill:#3a1e5f,stroke:#a07aff,color:#e8d0ff
+    classDef infra   fill:#3a2a10,stroke:#ffaa4a,color:#fff0d0
+
+    class Entry,MW core
+    class IS,TS,TRS,BS,ES screen
+    class IM,LSL,AL,TR manager
+    class FS1,FS2,EEG,TM,KF,SW infra
+    </div>
+  </div>
+
+  <!-- ───────────────────────────── 2. Screen Navigation ───────────────────────────── -->
+  <div class="section-title">2. Screen Navigation &amp; State Machine</div>
+  <div class="diagram-box">
+    <div class="mermaid">
+flowchart TD
+    START([App Launch]) --> INSTRUCTION
+
+    INSTRUCTION["<b>INSTRUCTION</b>\nWelcome Screen"]
+    INSTRUCTION -->|Space\n_start_tutorial| TUTORIAL_IMG
+
+    subgraph TUT ["TUTORIAL — Practice Session"]
+        direction TB
+        TUTORIAL_IMG["<b>TUT_IMAGE</b>\nDescribe image aloud"]
+        TUTORIAL_CAP["<b>TUT_CAPTION</b>\nRead example captions"]
+        TUTORIAL_DONE["<b>TUT_DONE</b>\nPractice complete"]
+
+        TUTORIAL_IMG -->|"PageDown\nLSL: tutorialCaption"| TUTORIAL_CAP
+        TUTORIAL_CAP -->|"PageDown — more images\nLSL: tutorialImage"| TUTORIAL_IMG
+        TUTORIAL_CAP -->|"PageDown — last image\nLSL: tutorialEnded"| TUTORIAL_DONE
+    end
+
+    TUTORIAL_DONE -->|"Space\n_start_set(1)\nLSL: setStarted"| SHOW_IMAGE
+
+    subgraph SETS ["SET LOOP — 20 sets x 10 images"]
+        direction TB
+        SHOW_IMAGE["<b>SHOW_IMAGE</b>\nDisplay COCO image\nLSL: marker start"]
+        FIXATION["<b>FIXATION</b>\nCross shown\n2000 ms timer starts\nLSL: marker end"]
+        FINISH["<b>FINISH_SET</b>\n_finish_set\nLSL: setEnded"]
+
+        SHOW_IMAGE -->|"PageDown\n_show_fixation"| FIXATION
+        FIXATION -->|"timer — more images\n_advance_trial\nLSL: marker start"| SHOW_IMAGE
+        FIXATION -->|"timer — last image\n_advance_trial"| FINISH
+    end
+
+    FINISH -->|"sets 1-19\nLSL: setStarted"| BETWEEN
+    FINISH -->|"set 20\nLSL: experimentEnded"| END_SCR
+
+    BETWEEN["<b>BETWEEN_SETS</b>\nBreak screen"]
+    END_SCR["<b>END</b>\nCompletion screen"]
+
+    BETWEEN -->|"Space\n_start_set N+1"| SHOW_IMAGE
+
+    INSTRUCTION -->|Escape| EXIT([Exit])
+    TUT -->|Escape| EXIT
+    SETS -->|Escape| EXIT
+    BETWEEN -->|Escape| EXIT
+    END_SCR -->|Escape| EXIT
+
+    classDef screen fill:#1e3a5f,stroke:#4a9eff,color:#d0e8ff
+    classDef control fill:#1a3320,stroke:#4acd7a,color:#d0ffd8
+    classDef term fill:#3a1e1e,stroke:#ff6b6b,color:#ffd0d0
+
+    class INSTRUCTION,TUTORIAL_IMG,TUTORIAL_CAP,TUTORIAL_DONE,SHOW_IMAGE,FIXATION,BETWEEN,END_SCR screen
+    class FINISH control
+    class START,EXIT term
+    </div>
+  </div>
+
+  <!-- ───────────────────────────── 3. Data Flow ───────────────────────────── -->
+  <div class="section-title">3. Data Flow — Trial Execution</div>
+  <div class="diagram-box">
+    <div class="mermaid">
+sequenceDiagram
+    actor User
+    participant KF as _AppKeyFilter
+    participant MW as MainWindow
+    participant IM as ImageManager
+    participant LSL as LSLManager
+    participant TS as TrialScreen
+
+    User->>KF: Press Space (on BETWEEN_SETS / TUTORIAL done)
+    KF->>MW: handle_key(Space)
+    MW->>IM: get_set(set_number)
+    IM-->>MW: [filename_1, ..., filename_10] (shuffled)
+    MW->>MW: _advance_trial()
+    MW->>IM: get_image_path(filename)
+    IM-->>MW: Path object
+    MW->>LSL: push(marker("start_image", filename))
+    MW->>TS: show_image(path, trial_number)
+    TS-->>User: Image displayed fullscreen
+
+    User->>KF: Press PageDown (image described)
+    KF->>MW: handle_key(PageDown)
+    MW->>LSL: push(marker("end_image", filename))
+    MW->>TS: show_fixation()
+    TS-->>User: Fixation cross "+"
+    MW->>MW: _fixation_timer.start(2000ms)
+
+    MW->>MW: timeout → _advance_trial()
+    alt More images in set
+        MW->>IM: get_image_path(next_filename)
+        MW->>LSL: push(marker("start_image", next_filename))
+        MW->>TS: show_image(next_path, next_trial)
+    else Set complete (10 images done)
+        MW->>MW: _finish_set()
+        alt Sets 1–19
+            MW->>User: BetweenSetScreen shown
+        else Set 20
+            MW->>User: EndScreen shown
+        end
+    end
+    </div>
+  </div>
+
+  <!-- ───────────────────────────── 4. Tutorial Data Flow ───────────────────────────── -->
+  <div class="section-title">4. Data Flow — Tutorial Preparation</div>
+  <div class="diagram-box">
+    <div class="mermaid">
+sequenceDiagram
+    participant MW as MainWindow
+    participant IM as ImageManager
+    participant AL as AnnotationLoader
+    participant TR as Translator
+    participant FS as File System
+    participant TutS as TutorialScreen
+
+    MW->>MW: _build_tutorial_trials()
+    MW->>IM: get_tutorial_images()
+    IM->>FS: list /coco2017/train2017/img/
+    FS-->>IM: image filenames
+    IM-->>MW: [tutorial_img_1, ...]
+
+    loop For each tutorial image
+        MW->>AL: captions(image_filename)
+        AL->>FS: read /coco2017/train2017/ann/{id}.json
+        FS-->>AL: raw JSON
+        AL->>TR: translate_list(english_captions)
+        TR->>TR: check cache (translator_cache.json)
+        alt cache miss
+            TR->>TR: Google Translate API
+            TR->>FS: write cache
+        end
+        TR-->>AL: translated captions
+        AL-->>MW: [caption_1, ..., caption_5]
+    end
+
+    MW->>TutS: set_trials([{image: Path, captions: [str]}, ...])
+    </div>
+  </div>
+
+  <!-- ───────────────────────────── 5. LSL Marker Format ───────────────────────────── -->
+  <div class="section-title">5. LSL Marker Event Map</div>
+  <div class="diagram-box">
+    <div class="mermaid">
+graph LR
+    subgraph Marker Format
+        FMT["&lt;event&gt;_&lt;image&gt;_lsl&lt;lsl_clock&gt;_wall&lt;ISO-timestamp&gt;"]
+    end
+
+    subgraph Events Pushed
+        E1["start_image\n→ image appears on screen"]
+        E2["end_image\n→ PageDown pressed (trial ends)"]
+        E3["start_fixation\n→ fixation cross shown"]
+        E4["tutorial_image\n→ tutorial image phase"]
+        E5["tutorial_caption\n→ tutorial caption phase"]
+    end
+
+    subgraph Destination
+        OUT["LSL Outlet (EEG Hardware)\nor Console (offline mode)"]
+    end
+
+    E1 & E2 & E3 & E4 & E5 --> OUT
+
+    classDef evt fill:#2a1a3a,stroke:#a07aff,color:#e8d0ff
+    classDef dst fill:#1a3320,stroke:#4acd7a,color:#d0ffd8
+    class E1,E2,E3,E4,E5 evt
+    class OUT dst
+    </div>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        background: '#12122a',
+        primaryColor: '#1e3a5f',
+        primaryTextColor: '#d0e8ff',
+        primaryBorderColor: '#4a9eff',
+        lineColor: '#4a9eff',
+        secondaryColor: '#1a3320',
+        tertiaryColor: '#3a1e5f',
+        edgeLabelBackground: '#1a1a2e',
+        actorBorder: '#4a9eff',
+        actorBkg: '#1e2a4a',
+        actorTextColor: '#d0e8ff',
+        signalColor: '#7eb8ff',
+        signalTextColor: '#d0e8ff',
+        sequenceNumberColor: '#d0e8ff'
+      },
+      flowchart: { curve: 'basis', useMaxWidth: true },
+      sequence: { useMaxWidth: true }
+    });
+  </script>
+</body>
+</html>

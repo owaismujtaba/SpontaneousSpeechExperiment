@@ -18,7 +18,7 @@ class ImageManager:
     """
 
     def __init__(self):
-        self._all_images: list[str] = sorted(
+        self._all_images = sorted(
             f for f in os.listdir(IMG_PATH)
             if f.lower().endswith(('.jpg', '.jpeg', '.png'))
         )
@@ -32,7 +32,7 @@ class ImageManager:
         """Number of complete sets available."""
         return len(self._all_images) // TRIALS_PER_SET
 
-    def get_set(self, set_number: int) -> list[str]:
+    def get_set(self, set_number: int):
         """
         Return the image filenames for *set_number* in a randomised order.
 

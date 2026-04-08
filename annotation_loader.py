@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from typing import Optional
 
 
 class AnnotationLoader:
@@ -18,7 +17,7 @@ class AnnotationLoader:
         self._ann_dir    = Path(ann_dir)
         self._translator = translator
 
-    def captions(self, image_filename: str) -> list[str]:
+    def captions(self, image_filename: str):
         """
         Return the list of caption strings for *image_filename*.
         Captions are translated if a translator was supplied.

@@ -30,7 +30,7 @@ class TutorialScreen(QWidget):
 
     # ── Construction ───────────────────────────────────────────────────────
 
-    def __init__(self, trials: list[dict]):
+    def __init__(self, trials):
         """
         Args:
             trials: list of {"image": Path, "captions": [str, ...]}

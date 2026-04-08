@@ -22,11 +22,11 @@ class Translator:
     def __init__(self, source: str = "en", target: str = "es"):
         self._source = source
         self._target = target
-        self._cache: dict[str, str] = self._load_cache()
+        self._cache = self._load_cache()
 
     # ── Public ─────────────────────────────────────────────────────────────
 
-    def translate(self, text: str) -> str:
+    def translate(self, text: str):
         """Return *text* translated to the target language."""
         key = f"{self._source}>{self._target}:{text}"
         if key in self._cache:
@@ -46,12 +46,12 @@ class Translator:
 
         return text  # fallback
 
-    def translate_list(self, texts: list[str]) -> list[str]:
+    def translate_list(self, texts):
         return [self.translate(t) for t in texts]
 
     # ── Private ────────────────────────────────────────────────────────────
 
-    def _load_cache(self) -> dict[str, str]:
+    def _load_cache(self):
         if CACHE_FILE.exists():
             try:
                 with open(CACHE_FILE, encoding="utf-8") as fh:
