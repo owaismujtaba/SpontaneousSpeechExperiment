@@ -25,6 +25,8 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+coco2017/
+sketch_scenes/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
