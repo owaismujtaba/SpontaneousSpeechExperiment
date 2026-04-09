@@ -49,41 +49,46 @@
   </style>
 </head>
 <body>
+
   <h1>Spontaneous Speech Experiment</h1>
   <p class="subtitle">Architecture &amp; Runtime Flow Diagram</p>
 
-  <!-- ───────────────────────────── 1. Architecture ───────────────────────────── -->
+  <!-- ─────────────────────────── 1. Component Architecture ─────────────────────────── -->
   <div class="section-title">1. Component Architecture</div>
   <div class="diagram-box">
     <div class="mermaid">
 graph TD
-    Entry["<b>spontaneous_speech.py</b>\nEntry Point\nQApplication"] --> MW
+    Entry["spontaneous_speech.py\nEntry Point / QApplication"] --> MW
 
-    MW["<b>MainWindow</b>\nOrchestrator / State Machine\nQMainWindow"] --> SW
+    MW["MainWindow\nOrchestrator / State Machine"] --> SW
 
-    SW["QStackedWidget\n5 screens"] --> IS
-    SW --> TS
-    SW --> TRS
-    SW --> BS
-    SW --> ES
+    SW["QStackedWidget\n6 screens"] --> SC0
+    SW --> SC1
+    SW --> SC2
+    SW --> SC3
+    SW --> SC4
+    SW --> SC5
 
-    IS["InstructionScreen\nWelcome / Instructions"]
-    TS["TutorialScreen\nPractice Session\n(image → captions → done)"]
-    TRS["TrialScreen\nMain Experiment Display\n(image / fixation cross)"]
-    BS["BetweenSetScreen\nBreak / Pause"]
-    ES["EndScreen\nCompletion"]
+    SC0["0 - ParticipantScreen\nEnter participant and session ID"]
+    SC1["1 - InstructionScreen\nWelcome and overview"]
+    SC2["2 - TutorialScreen\nPractice session"]
+    SC3["3 - TrialScreen\nMain experiment display"]
+    SC4["4 - BetweenSetScreen\nBreak between sets"]
+    SC5["5 - EndScreen\nExperiment complete"]
 
-    MW --> TM["QTimer\nFixation Timer\n2000 ms"]
-    MW --> KF["_AppKeyFilter\nGlobal Key Interceptor\nSpace / PageDown / Escape"]
+    MW --> TM["QTimer\nFixation timer 2000ms"]
+    MW --> KF["_AppKeyFilter\nGlobal key interceptor\nSpace / PageDown / Escape"]
 
-    MW --> IM["<b>ImageManager</b>\nImage Loading &amp; Set Assignment\nCOCO 2017 images"]
-    MW --> LSL["<b>LSLManager</b>\nEEG Marker Streaming\nLab Streaming Layer"]
-    MW --> AL["<b>AnnotationLoader</b>\nCOCO JSON Caption Loader"]
-    AL --> TR["<b>Translator</b>\nGoogle Translate (EN→ES)\nPersistent JSON Cache"]
+    MW --> IM["ImageManager\nCOCO image loading\nand set assignment"]
+    MW --> LSL["LSLManager\nEEG marker streaming\nLab Streaming Layer"]
+    MW --> AR["AudioRecorder\nContinuous WAV recording\nsounddevice / soundfile"]
+    MW --> AL["AnnotationLoader\nCOCO JSON caption loader"]
+    AL --> TR["Translator\nGoogle Translate EN to ES\nPersistent JSON cache"]
 
-    IM --> FS1["File System\n/coco2017/selection/"]
-    AL --> FS2["File System\n/coco2017/train2017/ann/"]
-    LSL --> EEG["EEG Hardware / LSL Outlet\n(offline mode: console print)"]
+    IM --> FS1["coco2017/selection/\n200 experiment images"]
+    AL --> FS2["coco2017/train2017/ann/\nTutorial annotation JSON"]
+    AR --> FS3["recordings/\nsub_PXX_sess_SXX_timestamp.wav"]
+    LSL --> EEG["EEG Hardware / LSL Outlet\nor console in offline mode"]
 
     classDef core    fill:#1e3a5f,stroke:#4a9eff,color:#d0e8ff
     classDef screen  fill:#1a3320,stroke:#4acd7a,color:#d0ffd8
@@ -91,71 +96,78 @@ graph TD
     classDef infra   fill:#3a2a10,stroke:#ffaa4a,color:#fff0d0
 
     class Entry,MW core
-    class IS,TS,TRS,BS,ES screen
-    class IM,LSL,AL,TR manager
-    class FS1,FS2,EEG,TM,KF,SW infra
+    class SC0,SC1,SC2,SC3,SC4,SC5 screen
+    class IM,LSL,AL,TR,AR manager
+    class FS1,FS2,FS3,EEG,TM,KF,SW infra
     </div>
   </div>
 
-  <!-- ───────────────────────────── 2. Screen Navigation ───────────────────────────── -->
+  <!-- ─────────────────────────── 2. Screen Navigation ─────────────────────────── -->
   <div class="section-title">2. Screen Navigation &amp; State Machine</div>
   <div class="diagram-box">
     <div class="mermaid">
 flowchart TD
-    START([App Launch]) --> INSTRUCTION
+    START([App Launch]) --> PARTICIPANT
 
-    INSTRUCTION["<b>INSTRUCTION</b>\nWelcome Screen"]
-    INSTRUCTION -->|Space\n_start_tutorial| TUTORIAL_IMG
+    PARTICIPANT["PARTICIPANT\nEnter Participant ID and Session ID\nConfirm button or Enter key"]
+
+    PARTICIPANT -->|"Confirm button\n_on_participant_confirmed\nLSL: participantId / sessionId"| INSTRUCTION
+
+    INSTRUCTION["INSTRUCTION\nWelcome screen\noverall experiment summary"]
+
+    INSTRUCTION -->|"Space\n_start_tutorial\nrecorder.start\nLSL: tutorialStarted"| TUT_IMAGE
 
     subgraph TUT ["TUTORIAL — Practice Session"]
         direction TB
-        TUTORIAL_IMG["<b>TUT_IMAGE</b>\nDescribe image aloud"]
-        TUTORIAL_CAP["<b>TUT_CAPTION</b>\nRead example captions"]
-        TUTORIAL_DONE["<b>TUT_DONE</b>\nPractice complete"]
+        TUT_IMAGE["TUT_IMAGE\nDescribe image aloud"]
+        TUT_CAP["TUT_CAPTION\nRead example captions"]
+        TUT_DONE["TUT_DONE\nPractice complete slide"]
 
-        TUTORIAL_IMG -->|"PageDown\nLSL: tutorialCaption"| TUTORIAL_CAP
-        TUTORIAL_CAP -->|"PageDown — more images\nLSL: tutorialImage"| TUTORIAL_IMG
-        TUTORIAL_CAP -->|"PageDown — last image\nLSL: tutorialEnded"| TUTORIAL_DONE
+        TUT_IMAGE -->|"PageDown\nLSL: tutorialCaption"| TUT_CAP
+        TUT_CAP -->|"PageDown — more images\nLSL: tutorialImage"| TUT_IMAGE
+        TUT_CAP -->|"PageDown — last image\nLSL: tutorialEnded"| TUT_DONE
     end
 
-    TUTORIAL_DONE -->|"Space\n_start_set(1)\nLSL: setStarted"| SHOW_IMAGE
+    TUT_DONE -->|"Space\n_start_set 1\nLSL: setStarted"| SHOW_IMAGE
 
     subgraph SETS ["SET LOOP — 20 sets x 10 images"]
         direction TB
-        SHOW_IMAGE["<b>SHOW_IMAGE</b>\nDisplay COCO image\nLSL: marker start"]
-        FIXATION["<b>FIXATION</b>\nCross shown\n2000 ms timer starts\nLSL: marker end"]
-        FINISH["<b>FINISH_SET</b>\n_finish_set\nLSL: setEnded"]
+        SHOW_IMAGE["SHOW_IMAGE\nDisplay COCO image\nLSL: marker start"]
+        FIXATION["FIXATION\nFixation cross shown\n2000ms timer\nLSL: marker end"]
+        FINISH["FINISH_SET\n_finish_set\nLSL: setEnded"]
 
         SHOW_IMAGE -->|"PageDown\n_show_fixation"| FIXATION
         FIXATION -->|"timer — more images\n_advance_trial\nLSL: marker start"| SHOW_IMAGE
         FIXATION -->|"timer — last image\n_advance_trial"| FINISH
     end
 
-    FINISH -->|"sets 1-19\nLSL: setStarted"| BETWEEN
-    FINISH -->|"set 20\nLSL: experimentEnded"| END_SCR
+    FINISH -->|"sets 1 to 19\nLSL: setStarted N+1"| BETWEEN
+    FINISH -->|"set 20\nrecorder.stop\nLSL: experimentEnded"| END_SCR
 
-    BETWEEN["<b>BETWEEN_SETS</b>\nBreak screen"]
-    END_SCR["<b>END</b>\nCompletion screen"]
+    BETWEEN["BETWEEN_SETS\nBreak screen\nset N of 20 completed"]
+    END_SCR["END\nThank you screen\nExperiment complete"]
 
     BETWEEN -->|"Space\n_start_set N+1"| SHOW_IMAGE
 
-    INSTRUCTION -->|Escape| EXIT([Exit])
-    TUT -->|Escape| EXIT
-    SETS -->|Escape| EXIT
-    BETWEEN -->|Escape| EXIT
+    PARTICIPANT -->|Escape| EXIT
+    INSTRUCTION -->|Escape| EXIT
+    TUT -->|"Escape\nrecorder.stop"| EXIT
+    SETS -->|"Escape\nrecorder.stop"| EXIT
+    BETWEEN -->|"Escape\nrecorder.stop"| EXIT
     END_SCR -->|Escape| EXIT
+    EXIT([Exit — recorder saved])
 
-    classDef screen fill:#1e3a5f,stroke:#4a9eff,color:#d0e8ff
+    classDef screen  fill:#1e3a5f,stroke:#4a9eff,color:#d0e8ff
     classDef control fill:#1a3320,stroke:#4acd7a,color:#d0ffd8
-    classDef term fill:#3a1e1e,stroke:#ff6b6b,color:#ffd0d0
+    classDef term    fill:#3a1e1e,stroke:#ff6b6b,color:#ffd0d0
 
-    class INSTRUCTION,TUTORIAL_IMG,TUTORIAL_CAP,TUTORIAL_DONE,SHOW_IMAGE,FIXATION,BETWEEN,END_SCR screen
+    class PARTICIPANT,INSTRUCTION,TUT_IMAGE,TUT_CAP,TUT_DONE,SHOW_IMAGE,FIXATION,BETWEEN,END_SCR screen
     class FINISH control
     class START,EXIT term
     </div>
   </div>
 
-  <!-- ───────────────────────────── 3. Data Flow ───────────────────────────── -->
+  <!-- ─────────────────────────── 3. Trial Execution Sequence ─────────────────────────── -->
   <div class="section-title">3. Data Flow — Trial Execution</div>
   <div class="diagram-box">
     <div class="mermaid">
@@ -165,104 +177,140 @@ sequenceDiagram
     participant MW as MainWindow
     participant IM as ImageManager
     participant LSL as LSLManager
+    participant AR as AudioRecorder
     participant TS as TrialScreen
 
-    User->>KF: Press Space (on BETWEEN_SETS / TUTORIAL done)
-    KF->>MW: handle_key(Space)
-    MW->>IM: get_set(set_number)
-    IM-->>MW: [filename_1, ..., filename_10] (shuffled)
-    MW->>MW: _advance_trial()
-    MW->>IM: get_image_path(filename)
+    User->>KF: Press Space on BETWEEN_SETS or TUTORIAL done
+    KF->>MW: handle_key Space
+    MW->>IM: get_set N
+    IM-->>MW: 10 shuffled filenames
+    MW->>LSL: push setStarted N
+    MW->>MW: _advance_trial
+    MW->>IM: get_image_path filename
     IM-->>MW: Path object
-    MW->>LSL: push(marker("start_image", filename))
-    MW->>TS: show_image(path, trial_number)
+    MW->>LSL: push marker start filename
+    MW->>TS: show_image path trial_number
     TS-->>User: Image displayed fullscreen
 
-    User->>KF: Press PageDown (image described)
-    KF->>MW: handle_key(PageDown)
-    MW->>LSL: push(marker("end_image", filename))
-    MW->>TS: show_fixation()
-    TS-->>User: Fixation cross "+"
-    MW->>MW: _fixation_timer.start(2000ms)
+    User->>KF: Press PageDown - image described
+    KF->>MW: handle_key PageDown
+    MW->>LSL: push marker end filename
+    MW->>TS: show_fixation
+    TS-->>User: Fixation cross shown
+    MW->>MW: fixation_timer.start 2000ms
 
-    MW->>MW: timeout → _advance_trial()
+    MW->>MW: timeout - _advance_trial
+
     alt More images in set
-        MW->>IM: get_image_path(next_filename)
-        MW->>LSL: push(marker("start_image", next_filename))
-        MW->>TS: show_image(next_path, next_trial)
-    else Set complete (10 images done)
-        MW->>MW: _finish_set()
-        alt Sets 1–19
-            MW->>User: BetweenSetScreen shown
+        MW->>IM: get_image_path next_filename
+        MW->>LSL: push marker start next_filename
+        MW->>TS: show_image next_path
+    else Last image - set complete
+        MW->>LSL: push setEnded N
+        alt Sets 1 to 19
+            MW-->>User: BetweenSetScreen shown
         else Set 20
-            MW->>User: EndScreen shown
+            MW->>AR: stop - save WAV
+            AR-->>MW: recordings/sub_PXX_sess_SXX.wav
+            MW->>LSL: push experimentEnded
+            MW-->>User: EndScreen shown
         end
     end
     </div>
   </div>
 
-  <!-- ───────────────────────────── 4. Tutorial Data Flow ───────────────────────────── -->
+  <!-- ─────────────────────────── 4. Tutorial Data Preparation ─────────────────────────── -->
   <div class="section-title">4. Data Flow — Tutorial Preparation</div>
   <div class="diagram-box">
     <div class="mermaid">
 sequenceDiagram
     participant MW as MainWindow
-    participant IM as ImageManager
     participant AL as AnnotationLoader
     participant TR as Translator
     participant FS as File System
     participant TutS as TutorialScreen
 
-    MW->>MW: _build_tutorial_trials()
-    MW->>IM: get_tutorial_images()
-    IM->>FS: list /coco2017/train2017/img/
-    FS-->>IM: image filenames
-    IM-->>MW: [tutorial_img_1, ...]
+    MW->>MW: _build_tutorial_trials at startup
+    MW->>FS: list coco2017/train2017/ann first 3 files
 
-    loop For each tutorial image
-        MW->>AL: captions(image_filename)
-        AL->>FS: read /coco2017/train2017/ann/{id}.json
-        FS-->>AL: raw JSON
-        AL->>TR: translate_list(english_captions)
-        TR->>TR: check cache (translator_cache.json)
-        alt cache miss
+    loop For each of 3 tutorial images
+        MW->>AL: captions image_filename
+        AL->>FS: read ann/image_filename.json
+        FS-->>AL: raw JSON with caption tags
+        AL->>TR: translate_list english_captions
+        TR->>TR: check translations_cache.json
+        alt Cache miss
             TR->>TR: Google Translate API
-            TR->>FS: write cache
+            TR->>FS: save updated cache
         end
-        TR-->>AL: translated captions
-        AL-->>MW: [caption_1, ..., caption_5]
+        TR-->>AL: Spanish captions
+        AL-->>MW: list of translated captions
     end
 
-    MW->>TutS: set_trials([{image: Path, captions: [str]}, ...])
+    MW->>TutS: set_trials list of image+captions dicts
     </div>
   </div>
 
-  <!-- ───────────────────────────── 5. LSL Marker Format ───────────────────────────── -->
-  <div class="section-title">5. LSL Marker Event Map</div>
+  <!-- ─────────────────────────── 5. Audio Recording Lifecycle ─────────────────────────── -->
+  <div class="section-title">5. Audio Recording Lifecycle</div>
   <div class="diagram-box">
     <div class="mermaid">
-graph LR
-    subgraph Marker Format
-        FMT["&lt;event&gt;_&lt;image&gt;_lsl&lt;lsl_clock&gt;_wall&lt;ISO-timestamp&gt;"]
+flowchart TD
+    A([App starts - recorder created - not recording])
+    A -->|"Space on InstructionScreen - _start_tutorial"| B
+
+    B["recorder.start\nfilename prefix = sub_PID_sess_SID\nsounddevice InputStream opened"]
+    B -->|"audio callback fires every few ms"| C
+
+    C["Audio thread running\n_callback appends chunk to frames list\nthreading.Lock protects shared list"]
+    C -->|"Set 20 complete OR Escape pressed"| D
+
+    D["recorder.stop\nstream closed\nnp.concatenate all chunks\nsoundfile.write WAV to disk"]
+    D --> E([WAV saved to recordings folder])
+
+    classDef proc fill:#1e3a5f,stroke:#4a9eff,color:#d0e8ff
+    classDef term fill:#3a1e1e,stroke:#ff6b6b,color:#ffd0d0
+    classDef stop fill:#1a3320,stroke:#4acd7a,color:#d0ffd8
+
+    class B,C proc
+    class A,E term
+    class D stop
+    </div>
+  </div>
+
+  <!-- ─────────────────────────── 6. LSL Marker Reference ─────────────────────────── -->
+  <div class="section-title">6. LSL Marker Reference</div>
+  <div class="diagram-box">
+    <div class="mermaid">
+flowchart TD
+    subgraph Format ["Marker Format for image events"]
+        FMT["start_filename_lslCLOCK_wallISOTIME\nend_filename_lslCLOCK_wallISOTIME"]
     end
 
-    subgraph Events Pushed
-        E1["start_image\n→ image appears on screen"]
-        E2["end_image\n→ PageDown pressed (trial ends)"]
-        E3["start_fixation\n→ fixation cross shown"]
-        E4["tutorial_image\n→ tutorial image phase"]
-        E5["tutorial_caption\n→ tutorial caption phase"]
+    subgraph Markers ["All Markers Pushed"]
+        M1["participantId;PXX;sessionId;SXX"]
+        M2["tutorialStarted"]
+        M3["tutorialImage_filename_clock"]
+        M4["tutorialCaption_filename_clock"]
+        M5["tutorialEnded"]
+        M6["setStarted;N"]
+        M7["start_filename_lsl..._wall..."]
+        M8["end_filename_lsl..._wall..."]
+        M9["setEnded;N"]
+        M10["experimentEnded"]
+        M11["experimentEnded;ESC pressed"]
     end
 
-    subgraph Destination
-        OUT["LSL Outlet (EEG Hardware)\nor Console (offline mode)"]
+    subgraph Dest ["Destination"]
+        OUT["LSL Outlet\nEEG Hardware\nor console in offline mode"]
     end
 
-    E1 & E2 & E3 & E4 & E5 --> OUT
+    M1 & M2 & M3 & M4 & M5 & M6 & M7 & M8 & M9 & M10 & M11 --> OUT
 
     classDef evt fill:#2a1a3a,stroke:#a07aff,color:#e8d0ff
     classDef dst fill:#1a3320,stroke:#4acd7a,color:#d0ffd8
-    class E1,E2,E3,E4,E5 evt
+
+    class M1,M2,M3,M4,M5,M6,M7,M8,M9,M10,M11 evt
     class OUT dst
     </div>
   </div>

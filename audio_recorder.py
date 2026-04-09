@@ -62,7 +62,7 @@ class AudioRecorder:
         self._stream.start()
         print("[AudioRecorder] Recording started")
 
-    def stop(self) -> Path | None:
+    def stop(self):
         """Stop recording and write a WAV file. Returns the saved path, or None."""
         if not _AUDIO_AVAILABLE or self._stream is None:
             return None

@@ -13,7 +13,7 @@ IMG_PATH = BASE_DIR / 'coco2017' / 'selection'
 # Paths — tutorial (practice session)
 TUTORIAL_IMG_PATH    = BASE_DIR / 'coco2017' / 'train2017' / 'img'
 TUTORIAL_ANN_PATH    = BASE_DIR / 'coco2017' / 'train2017' / 'ann'
-TUTORIAL_NUM_IMAGES  = 3          # number of practice images shown
+TUTORIAL_NUM_IMAGES  = 3          
 
 # Audio recordings output directory
 RECORDINGS_DIR = BASE_DIR / 'recordings'
