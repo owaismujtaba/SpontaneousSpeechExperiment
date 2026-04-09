@@ -1,2 +1,5 @@
 PyQt6
 pylsl
+sounddevice
+soundfile
+numpy

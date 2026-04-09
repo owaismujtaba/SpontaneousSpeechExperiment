@@ -6,9 +6,12 @@ from PyQt6.QtCore import Qt, QTimer, QObject, QEvent
 from config import (
     FIXATION_DURATION_MS, TOTAL_SETS,
     TUTORIAL_IMG_PATH, TUTORIAL_ANN_PATH, TUTORIAL_NUM_IMAGES,
+    RECORDINGS_DIR,
 )
+from audio_recorder import AudioRecorder
 from annotation_loader import AnnotationLoader
 from translator import Translator
+from gui.screens.participant_screen import ParticipantScreen
 from gui.screens.instruction_screen import InstructionScreen
 from gui.screens.tutorial_screen import TutorialScreen
 from gui.screens.trial_screen import TrialScreen
@@ -78,6 +81,7 @@ class _AppKeyFilter(QObject):
 
 
 # ── States ─────────────────────────────────────────────────────────────────
+_PARTICIPANT  = "participant"
 _INSTRUCTION  = "instruction"
 _TUTORIAL     = "tutorial"
 _TRIAL        = "trial"
@@ -86,11 +90,12 @@ _BETWEEN_SETS = "between_sets"
 _END          = "end"
 
 # ── Stack widget page indices ───────────────────────────────────────────────
-_PAGE_INSTRUCTION  = 0
-_PAGE_TUTORIAL     = 1
-_PAGE_TRIAL        = 2
-_PAGE_BETWEEN_SETS = 3
-_PAGE_END          = 4
+_PAGE_PARTICIPANT  = 0
+_PAGE_INSTRUCTION  = 1
+_PAGE_TUTORIAL     = 2
+_PAGE_TRIAL        = 3
+_PAGE_BETWEEN_SETS = 4
+_PAGE_END          = 5
 
 
 class MainWindow(QMainWindow):
@@ -100,6 +105,7 @@ class MainWindow(QMainWindow):
 
     Full flow
     ─────────
+    PARTICIPANT  ──[Confirm]─► INSTRUCTION
     INSTRUCTION  ──[Space]──► TUTORIAL (practice session)
     TUTORIAL     ──[PgDn]──► IMAGE→CAPTION→IMAGE… → DONE slide
     TUTORIAL(done)──[Space]──► TRIAL (set 1)
@@ -115,12 +121,15 @@ class MainWindow(QMainWindow):
         self._image_manager = image_manager
         self._lsl = lsl
 
-        self._state          = _INSTRUCTION
-        self._current_set    = 0
+        self._state           = _PARTICIPANT
+        self._participant_id  = ""
+        self._session_id      = ""
+        self._current_set     = 0
         self._images: list[str] = []
-        self._current_image  = ""
-        self._shown          = 0
-        self._total          = 0
+        self._current_image   = ""
+        self._shown           = 0
+        self._total           = 0
+        self._recorder        = AudioRecorder(RECORDINGS_DIR)
 
         self._setup_ui()
         self._setup_timer()
@@ -136,17 +145,22 @@ class MainWindow(QMainWindow):
         self._stack = QStackedWidget()
         self.setCentralWidget(self._stack)
 
+        self._participant_screen  = ParticipantScreen()
         self._instruction_screen  = InstructionScreen()
         self._tutorial_screen     = TutorialScreen(self._build_tutorial_trials())
         self._trial_screen        = TrialScreen()
         self._between_set_screen  = BetweenSetScreen()
         self._end_screen          = EndScreen()
 
-        self._stack.addWidget(self._instruction_screen)   # _PAGE_INSTRUCTION
+        self._stack.addWidget(self._participant_screen)    # _PAGE_PARTICIPANT
+        self._stack.addWidget(self._instruction_screen)    # _PAGE_INSTRUCTION
         self._stack.addWidget(self._tutorial_screen)       # _PAGE_TUTORIAL
         self._stack.addWidget(self._trial_screen)          # _PAGE_TRIAL
         self._stack.addWidget(self._between_set_screen)    # _PAGE_BETWEEN_SETS
         self._stack.addWidget(self._end_screen)            # _PAGE_END
+
+        self._participant_screen.confirmed.connect(self._on_participant_confirmed)
+        self._participant_screen.focus_first_field()
 
     def _build_tutorial_trials(self):
         """Load the first TUTORIAL_NUM_IMAGES images + captions from train2017 (translated to Spanish)."""
@@ -171,14 +185,28 @@ class MainWindow(QMainWindow):
         self._key_filter = _AppKeyFilter(self)
         QApplication.instance().installEventFilter(self._key_filter)  # type: ignore[union-attr]
 
+    # ── Participant ID flow ────────────────────────────────────────────────
+
+    def _on_participant_confirmed(self, participant_id: str, session_id: str) -> None:
+        self._participant_id = participant_id
+        self._session_id     = session_id
+        self._lsl.push(f"participantId;{participant_id};sessionId;{session_id}")
+        self._state = _INSTRUCTION
+        self._stack.setCurrentIndex(_PAGE_INSTRUCTION)
+
     # ── Key dispatcher ─────────────────────────────────────────────────────
 
     def handle_key(self, key: Qt.Key) -> bool:
         """Return True if the key was consumed."""
         if key == Qt.Key.Key_Escape:
             self._lsl.push("experimentEnded;ESC pressed")
+            self._recorder.stop()
             self.close()
             return True
+
+        # While on the participant screen let Qt handle keys natively (text input)
+        if self._state == _PARTICIPANT:
+            return False
 
         if key == Qt.Key.Key_Space:
             if self._state == _INSTRUCTION:
@@ -207,6 +235,8 @@ class MainWindow(QMainWindow):
 
     def _start_tutorial(self) -> None:
         self._state = _TUTORIAL
+        prefix = f"sub_{self._participant_id}_sess_{self._session_id}"
+        self._recorder.start(filename_prefix=prefix)
         self._lsl.push("tutorialStarted")
         self._stack.setCurrentIndex(_PAGE_TUTORIAL)
         self._tutorial_screen.start()
@@ -268,6 +298,7 @@ class MainWindow(QMainWindow):
         if self._current_set >= TOTAL_SETS:
             self._state = _END
             self._lsl.push("experimentEnded")
+            self._recorder.stop()
             self._stack.setCurrentIndex(_PAGE_END)
         else:
             self._state = _BETWEEN_SETS
